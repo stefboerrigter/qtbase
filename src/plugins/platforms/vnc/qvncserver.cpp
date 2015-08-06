@@ -700,39 +700,27 @@ void QVNCServer::setEncodings()
                 if (encoder)
                     break;
                 switch (qvnc_screen->depth()) {
-#ifdef QT_QWS_DEPTH_8
                 case 8:
                     encoder = new QRfbHextileEncoder<quint8>(this);
                     break;
-#endif
-#ifdef QT_QWS_DEPTH_12
-                case 12:
-                    encoder = new QRfbHextileEncoder<qrgb444>(this);
-                    break;
-#endif
-#ifdef QT_QWS_DEPTH_15
-                case 15:
-                    encoder = new QRfbHextileEncoder<qrgb555>(this);
-                    break;
-#endif
-#ifdef QT_QWS_DEPTH_16
                 case 16:
                     encoder = new QRfbHextileEncoder<quint16>(this);
                     break;
-#endif
-#ifdef QT_QWS_DEPTH_18
+                case 32:
+                    encoder = new QRfbHextileEncoder<quint32>(this);
+                    break;
+#if 0 /* Old QT types */
+                case 12:
+                    encoder = new QRfbHextileEncoder<qrgb444>(this);
+                    break;
+                case 15:
+                    encoder = new QRfbHextileEncoder<qrgb555>(this);
+                    break;
                 case 18:
                     encoder = new QRfbHextileEncoder<qrgb666>(this);
                     break;
-#endif
-#ifdef QT_QWS_DEPTH_24
                 case 24:
                     encoder = new QRfbHextileEncoder<qrgb888>(this);
-                    break;
-#endif
-#ifdef QT_QWS_DEPTH_32
-                case 32:
-                    encoder = new QRfbHextileEncoder<quint32>(this);
                     break;
 #endif
                 default:
