@@ -702,6 +702,7 @@ CFG_EGLFS_VIV_WL=no
 CFG_DIRECTFB=no
 CFG_GBM=auto
 CFG_LINUXFB=auto
+CFG_VNC=auto
 CFG_KMS=auto
 CFG_MIRCLIENT=auto
 CFG_LIBUDEV=auto
@@ -1868,6 +1869,13 @@ while [ "$#" -gt 0 ]; do
             UNKNOWN_OPT=yes
         fi
         ;;
+    vnc)
+        if [ "$VAL" = "yes" ] || [ "$VAL" = "no" ]; then
+            CFG_VNC="$VAL"
+        else
+            UNKNOWN_OPT=yes
+        fi
+        ;;
     kms)
         if [ "$VAL" = "yes" ] || [ "$VAL" = "no" ]; then
             CFG_KMS="$VAL"
@@ -2709,6 +2717,12 @@ Additional options:
 
  *  -no-mirclient....... Do not compile Mir client support.
     -mirclient.......... Compile Mir client support.
+
+    -no-vnc ............ Do not compile VNC support.
+ *  -vnc ............... Compile VNC support.
+
+    -no-kms ............ Do not compile KMS support.
+ *  -kms ............... Compile KMS support (Requires EGL).
 
     -qpa <name> ......... Sets the default QPA platform (e.g xcb, cocoa, windows).
 
@@ -5391,7 +5405,12 @@ ORIG_CFG_XCB="$CFG_XCB"
 ORIG_CFG_EGLFS="$CFG_EGLFS"
 ORIG_CFG_DIRECTFB="$CFG_DIRECTFB"
 ORIG_CFG_LINUXFB="$CFG_LINUXFB"
+<<<<<<< b4ada3f0d8feed7dbff22aa780d38ab126020ac6
 ORIG_CFG_MIRCLIENT="$CFG_MIRCLIENT"
+=======
+ORIG_CFG_VNC="$CFG_VNC"
+ORIG_CFG_KMS="$CFG_KMS"
+>>>>>>> Initial commit of VNC support
 
 if [ "$CFG_LIBUDEV" != "no" ]; then
     if [ -n "$PKG_CONFIG" ] && $PKG_CONFIG --exists libudev 2>/dev/null; then
@@ -5679,6 +5698,14 @@ if [ "$CFG_LINUXFB" != "no" ]; then
     fi
 fi
 
+if [ "$CFG_VNC" != "no" ]; then
+    if [ "$CFG_VNC" = "yes" ] && [ "$XPLATFORM_MINGW" = "yes" ]; then
+        echo " VNC support cannot be enabled on Windows"
+        exit 101
+    fi
+    CFG_VNC=yes
+fi
+
 if [ "$CFG_KMS" != "no" ]; then
     if compileTest qpa/kms "KMS"; then
         CFG_KMS=yes
@@ -5880,6 +5907,9 @@ fi
 if [ "$CFG_LINUXFB" = "yes" ]; then
     QT_CONFIG="$QT_CONFIG linuxfb"
 fi
+if [ "$CFG_VNC" = "yes" ]; then
+    QT_CONFIG="$QT_CONFIG vnc"
+fi
 if [ "$CFG_KMS" = "yes" ]; then
     QT_CONFIG="$QT_CONFIG kms"
 fi
@@ -5888,9 +5918,9 @@ if [ "$CFG_MIRCLIENT" = "yes" ]; then
 fi
 
 if [ "$XPLATFORM_MAC" = "no" ] && [ "$XPLATFORM_MINGW" = "no" ] && [ "$XPLATFORM_QNX" = "no" ] && [ "$XPLATFORM_ANDROID" = "no" ] && [ "$XPLATFORM_HAIKU" = "no" ]; then
-    if [ "$CFG_XCB" = "no" ] && [ "$CFG_EGLFS" = "no" ] && [ "$CFG_DIRECTFB" = "no" ] && [ "$CFG_LINUXFB" = "no" ] && [ "$CFG_MIRCLIENT" = "no" ]; then
+    if [ "$CFG_XCB" = "no" ] && [ "$CFG_EGLFS" = "no" ] && [ "$CFG_DIRECTFB" = "no" ] && [ "$CFG_LINUXFB" = "no" ] && [ "$CFG_MIRCLIENT" = "no" ] && [ "$CFG_VNC" = "no" ] && [ "$CFG_KMS" = "no" ]; then
         if [ "$QPA_PLATFORM_GUARD" = "yes" ] &&
-            ( [ "$ORIG_CFG_XCB" = "auto" ] || [ "$ORIG_CFG_EGLFS" = "auto" ] || [ "$ORIG_CFG_DIRECTFB" = "auto" ] || [ "$ORIG_CFG_LINUXFB" = "auto" ] || [ "$ORIG_CFG_MIRCLIENT" = "auto" ] ); then
+            ( [ "$ORIG_CFG_XCB" = "auto" ] || [ "$ORIG_CFG_EGLFS" = "auto" ] || [ "$ORIG_CFG_DIRECTFB" = "auto" ] || [ "$ORIG_CFG_LINUXFB" = "auto" ] || [ "$ORIG_CFG_MIRCLIENT" = "auto" ] || [ "$ORIG_CFG_VNC" = "auto" ] || [ "$ORIG_CFG_KMS" = "auto" ] ); then
         echo "No QPA platform plugin enabled!"
         echo " If you really want to build without a QPA platform plugin you must pass"
         echo " -no-qpa-platform-guard to configure. Doing this will"
@@ -7362,7 +7392,11 @@ report_support "      EGLFS Mali ........." "$CFG_EGLFS_MALI"
 report_support "      EGLFS Raspberry Pi ." "$CFG_EGLFS_BRCM"
 report_support "      EGLFS X11 .........." "$CFG_EGL_X"
 report_support "    LinuxFB .............." "$CFG_LINUXFB"
+<<<<<<< b4ada3f0d8feed7dbff22aa780d38ab126020ac6
 report_support "    Mir client............" "$CFG_MIRCLIENT"
+=======
+report_support "    VNC .................." "$CFG_VNC"
+>>>>>>> Initial commit of VNC support
 report_support "    XCB .................." "$CFG_XCB" system "system library" qt "bundled copy"
 if [ "$CFG_XCB" != "no" ]; then
     report_support "      EGL on X ..........." "$CFG_EGL_X"

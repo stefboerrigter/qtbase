@@ -50,11 +50,11 @@ void QFbCursorDeviceListener::onDeviceListChanged(QInputDeviceManager::DeviceTyp
 }
 
 QFbCursor::QFbCursor(QFbScreen *screen)
-    : mVisible(true),
+    : mGraphic(0),
+      mVisible(true),
       mScreen(screen),
       mDirty(false),
       mOnScreen(false),
-      mGraphic(0),
       mDeviceListener(0)
 {
     QByteArray hideCursorVal = qgetenv("QT_QPA_FB_HIDECURSOR");
