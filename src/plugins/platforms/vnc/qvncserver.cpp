@@ -347,19 +347,13 @@ bool QRfbClientCutText::read(QTcpSocket *s)
 
 //===========================================================================
 
-QVNCServer::QVNCServer(QVNCScreen *screen)
+QVNCServer::QVNCServer(QVNCScreen *screen, int id, QHostAddress *addr)
     : qvnc_screen(screen)
 {
-    init(5900);
+    init(5900 + id, addr);
 }
 
-QVNCServer::QVNCServer(QVNCScreen *screen, int id)
-    : qvnc_screen(screen)
-{
-    init(5900 + id);
-}
-
-void QVNCServer::init(uint port)
+void QVNCServer::init(uint port, QHostAddress *addr)
 {
     handleMsg = false;
     client = 0;
@@ -375,10 +369,10 @@ void QVNCServer::init(uint port)
     connect(timer, SIGNAL(timeout()), this, SLOT(checkUpdate()));
 
     serverSocket = new QTcpServer(this);
-    if (!serverSocket->listen(QHostAddress::Any, port))
+    if (!serverSocket->listen(*addr, port))
         qDebug() << "QVNCServer could not connect:" << serverSocket->errorString();
     else
-        qDebug("QVNCServer created on port %d", port);
+        qDebug() << "QVNCServer created on" << addr->toString() << "port" << port;
 
     connect(serverSocket, SIGNAL(newConnection()), this, SLOT(acceptConnection()));
 
@@ -1780,15 +1774,11 @@ void QVNCServer::discardClient()
 
 
 
-QVNCScreenPrivate::QVNCScreenPrivate(QVNCScreen *parent)
+QVNCScreenPrivate::QVNCScreenPrivate(QVNCScreen *parent, int display, QHostAddress *addr)
     : dpiX(72), dpiY(72), doOnScreenSurface(false), refreshRate(25),
       vncServer(0), q_ptr(parent)
 {
-#if 0//ndef QT_NO_QWS_SIGNALHANDLER
-    QWSSignalHandler::instance()->addObject(this);
-#endif
-
-    vncServer = new QVNCServer(q_ptr, 0);
+    vncServer = new QVNCServer(q_ptr, display, addr);
     vncServer->setRefreshRate(refreshRate);
 
 

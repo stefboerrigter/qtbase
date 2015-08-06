@@ -369,8 +369,7 @@ class QVNCServer : public QObject
 {
     Q_OBJECT
 public:
-    QVNCServer(QVNCScreen *screen);
-    QVNCServer(QVNCScreen *screen, int id);
+    QVNCServer(QVNCScreen *screen, int id, QHostAddress *);
     ~QVNCServer();
 
     void setDirty();
@@ -417,7 +416,7 @@ private slots:
     void discardClient();
 
 private:
-    void init(uint port);
+    void init(uint port, QHostAddress *);
     enum ClientState { Unconnected, Protocol, Init, Connected };
     QTimer *timer;
     QTcpServer *serverSocket;
@@ -454,7 +453,7 @@ private:
 class QVNCScreenPrivate : public QObject
 {
 public:
-    QVNCScreenPrivate(QVNCScreen *parent);
+    QVNCScreenPrivate(QVNCScreen *parent, int display, QHostAddress *addr);
     ~QVNCScreenPrivate();
 
     void setDirty(const QRect &rect, bool force = false);
