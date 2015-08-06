@@ -37,6 +37,8 @@ contains(QT_CONFIG, directfb) {
 
 contains(QT_CONFIG, linuxfb): SUBDIRS += linuxfb
 
+contains(QT_CONFIG, vnc): SUBDIRS += vnc
+
 haiku {
     SUBDIRS += haiku
 }
