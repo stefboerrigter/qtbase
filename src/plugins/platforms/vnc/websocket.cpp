@@ -46,8 +46,12 @@ void WebSocket::readClient()
             break;
 
         case Response:
-            sendHandshake();
-            state = FrameStart;
+            if (sendHandshake()) {
+                state = FrameStart;
+                emit setupComplete();
+            } else {
+                abort("Websocket handshake failed");
+            }
             break;
 
         case FrameStart:
@@ -78,7 +82,7 @@ void WebSocket::decodeFrame()
     const char *mask = 0;
     const char *mdata = 0;
     unsigned char opcode = framebuf[0] & 0xf;
-    bool fin = (framebuf[0] >> 7) & 0x1;
+    //bool fin = (framebuf[0] >> 7) & 0x1;
     bool masked = (framebuf[1] >> 7) & 0x1;
     unsigned char reserved = (framebuf[0] >> 4) & 0x7;
 
@@ -111,7 +115,7 @@ void WebSocket::decodeFrame()
         framelen += datalen;
         mask = framebuf + 10;
     }
-    //qDebug() << "framesize" << frame.size() << "framelen" << framelen << "datalen" << datalen;
+    //qDebug() << "framesize" << frame.size() << "framelen" << framelen << "datalen" << datalen << databuf;
     if (frame.size() < framelen) {
         wantbytes = framelen - frame.size();
         readClient();
@@ -183,15 +187,15 @@ qint64 WebSocket::write(const char *buf, qint64 datalen)
     return socket->write(msg.constData(), msg.size());
 }
 
-void WebSocket::sendHandshake()
+bool WebSocket::sendHandshake()
 {
     if (headers["sec-websocket-version"] != "13") {
         sendError(404, "Websocket version not supported");
-        return;
+        return false;
     }
     if (!headers.contains("sec-websocket-key")) {
         sendError(404, "Websocket key header not found");
-        return;
+        return false;
     }
     if (headers.contains("sec-websocket-protocol")) {
         QStringList dtypes = headers["sec-websocket-protocol"].split(QRegExp(",\\s*"));
@@ -213,6 +217,7 @@ void WebSocket::sendHandshake()
         sendHeader("Sec-WebSocket-Protocol", subprotocol);
     }
     endHeaders();
+    return true;
 }
 
 void WebSocket::sendResponse(int code, QString response)
@@ -242,15 +247,13 @@ void WebSocket::sendError(int code, QString message)
     sendHeader("Connection", "close");
     endHeaders();
     socket->flush();
-    socket->close();
-    state = Unconnected; // XXX
-    emit disconnected();
 }
 
 void WebSocket::abort(QString message)
 {
     qDebug() << __PRETTY_FUNCTION__ << message;
     socket->abort();
+    state = Unconnected;
     emit disconnected();
 }
 
