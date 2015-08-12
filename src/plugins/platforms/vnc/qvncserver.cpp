@@ -432,7 +432,7 @@ void QVNCServer::acceptConnection()
         delete client;
 
     sock = serverSocket->nextPendingConnection();
-    client = new QVNCSocket(sock, QVNCSocket::RawSocket);
+    client = new QVNCSocket(sock, QVNCSocket::Web);
     connect(client,SIGNAL(readyRead()),this,SLOT(readClient()));
     connect(client,SIGNAL(disconnected()),this,SLOT(discardClient()));
     handleMsg = false;
@@ -1842,30 +1842,54 @@ void QVNCScreenPrivate::setDirty(const QRect& rect, bool force)
     vncServer->setDirty();
 }
 
-QVNCSocket::QVNCSocket(QTcpSocket *s, QVNCSocket::TxMode mode)
+QVNCSocket::QVNCSocket(QTcpSocket *s, QVNCSocket::SocketType mode)
     : socket(s), mode(mode)
 {
-    connect(socket, SIGNAL(readyRead()), this, SIGNAL(readyRead()));
-    connect(socket, SIGNAL(disconnected()), this, SIGNAL(disconnected()));
+    if (mode == Raw) {
+        connect(socket, SIGNAL(readyRead()), this, SIGNAL(readyRead()));
+        connect(socket, SIGNAL(disconnected()), this, SIGNAL(disconnected()));
+    } else if (mode == Web) {
+        wsocket = new WebSocket(socket);
+        connect(wsocket, SIGNAL(readyRead()), this, SIGNAL(readyRead()));
+        connect(wsocket, SIGNAL(disconnected()), this, SIGNAL(disconnected()));
+    }
 }
 
 QVNCSocket::~QVNCSocket()
 {
+    if (mode == Raw) {
+        delete socket;    
+    } else if (mode == Web) {
+        delete wsocket;
+    }
 }
 
 qint64 QVNCSocket::write(const char *buf, qint64 maxSize)
 {
     return socket->write(buf, maxSize);
+    if (mode == Raw) {
+        return socket->write(buf, maxSize);
+    } else {
+        return wsocket->write(buf, maxSize);
+    }
 }
 
 qint64 QVNCSocket::read(char *data, qint64 maxSize)
 {
-    return socket->read(data, maxSize);
+    if (mode == Raw) {
+        return socket->read(data, maxSize);
+    } else {
+        return wsocket->read(data, maxSize);
+    }
 }
 
 qint64 QVNCSocket::bytesAvailable() const
 {
-    return socket->bytesAvailable();
+    if (mode == Raw) {
+        return socket->bytesAvailable();
+    } else {
+        return wsocket->bytesAvailable();
+    }
 }
 
 QAbstractSocket::SocketState QVNCSocket::state()
@@ -1875,7 +1899,11 @@ QAbstractSocket::SocketState QVNCSocket::state()
 
 bool QVNCSocket::flush()
 {
-    return socket->flush();
+    if (mode == Raw) {
+        return socket->flush();
+    } else {
+        return wsocket->flush();
+    }
 }
 
 QT_END_NAMESPACE

@@ -47,6 +47,7 @@
 #include <QtNetwork>
 
 #include "qvncscreen.h"
+#include "websocket.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -473,14 +474,15 @@ public:
 
 class QVNCSocket : public QObject
 {
-Q_OBJECT
+    Q_OBJECT
+
 public:
-    enum TxMode {
-        RawSocket,
-        WebSocket,
-        SecureWebSocket
+    enum SocketType {
+        Raw,
+        Web,
+        SecureWeb
     };
-    QVNCSocket(QTcpSocket *s, TxMode mode);
+    QVNCSocket(QTcpSocket *s, SocketType mode);
     ~QVNCSocket();
 
     /* Socket-like interfaces */
@@ -496,7 +498,8 @@ Q_SIGNALS:
 
 private:
     QTcpSocket *socket;
-    TxMode mode;
+    WebSocket *wsocket;
+    SocketType mode;
 };
 
 static inline int defaultWidth() { return 1024; }
