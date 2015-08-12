@@ -52,6 +52,7 @@ QT_BEGIN_NAMESPACE
 
 class QVNCServer;
 class QVNCCursor;
+class QVNCSocket;
 
 #define MAP_TILE_SIZE 16
 #define MAP_WIDTH 1280 / MAP_TILE_SIZE
@@ -102,8 +103,8 @@ public:
         x = _x; y = _y; w = _w; h = _h;
     }
 
-    void read(QTcpSocket *s);
-    void write(QTcpSocket *s) const;
+    void read(QVNCSocket *s);
+    void write(QVNCSocket *s) const;
 
     quint16 x;
     quint16 y;
@@ -116,8 +117,8 @@ class QRfbPixelFormat
 public:
     static int size() { return 16; }
 
-    void read(QTcpSocket *s);
-    void write(QTcpSocket *s);
+    void read(QVNCSocket *s);
+    void write(QVNCSocket *s);
 
     int bitsPerPixel;
     int depth;
@@ -140,8 +141,8 @@ public:
     int size() const { return QRfbPixelFormat::size() + 8 + strlen(name); }
     void setName(const char *n);
 
-    void read(QTcpSocket *s);
-    void write(QTcpSocket *s);
+    void read(QVNCSocket *s);
+    void write(QVNCSocket *s);
 
     quint16 width;
     quint16 height;
@@ -152,7 +153,7 @@ public:
 class QRfbSetEncodings
 {
 public:
-    bool read(QTcpSocket *s);
+    bool read(QVNCSocket *s);
 
     quint16 count;
 };
@@ -160,7 +161,7 @@ public:
 class QRfbFrameBufferUpdateRequest
 {
 public:
-    bool read(QTcpSocket *s);
+    bool read(QVNCSocket *s);
 
     char incremental;
     QRfbRect rect;
@@ -169,7 +170,7 @@ public:
 class QRfbKeyEvent
 {
 public:
-    bool read(QTcpSocket *s);
+    bool read(QVNCSocket *s);
 
     char down;
     int  keycode;
@@ -179,7 +180,7 @@ public:
 class QRfbPointerEvent
 {
 public:
-    bool read(QTcpSocket *s);
+    bool read(QVNCSocket *s);
 
     Qt::MouseButtons buttons;
     enum { WheelNone,
@@ -195,7 +196,7 @@ public:
 class QRfbClientCutText
 {
 public:
-    bool read(QTcpSocket *s);
+    bool read(QVNCSocket *s);
 
     quint32 length;
 };
@@ -231,7 +232,7 @@ class QRfbSingleColorHextile
 public:
     QRfbSingleColorHextile(QRfbHextileEncoder<SRC> *e) : encoder(e) {}
     bool read(const uchar *data, int width, int height, int stride);
-    void write(QTcpSocket *socket) const;
+    void write(QVNCSocket *socket) const;
 
 private:
     QRfbHextileEncoder<SRC> *encoder;
@@ -243,7 +244,7 @@ class QRfbDualColorHextile
 public:
     QRfbDualColorHextile(QRfbHextileEncoder<SRC> *e) : encoder(e) {}
     bool read(const uchar *data, int width, int height, int stride);
-    void write(QTcpSocket *socket) const;
+    void write(QVNCSocket *socket) const;
 
 private:
     struct Rect {
@@ -288,7 +289,7 @@ class QRfbMultiColorHextile
 public:
     QRfbMultiColorHextile(QRfbHextileEncoder<SRC> *e) : encoder(e) {}
     bool read(const uchar *data, int width, int height, int stride);
-    void write(QTcpSocket *socket) const;
+    void write(QVNCSocket *socket) const;
 
 private:
     inline quint8* rect(int r) {
@@ -369,7 +370,7 @@ class QVNCServer : public QObject
 {
     Q_OBJECT
 public:
-    QVNCServer(QVNCScreen *screen, int id, QHostAddress *);
+    QVNCServer(QVNCScreen *screen, const QStringList &args);
     ~QVNCServer();
 
     void setDirty();
@@ -396,7 +397,7 @@ public:
 
     inline QVNCScreen* screen() const { return qvnc_screen; }
     inline QVNCDirtyMap* dirtyMap() const { return qvnc_screen->dirtyMap(); }
-    inline QTcpSocket* clientSocket() const { return client; }
+    inline QVNCSocket* clientSocket() const { return client; }
     QImage *screenImage() const;
     inline bool doPixelConversion() const { return needConversion; }
     void setCursor(QVNCCursor * c) { cursor = c; }
@@ -416,11 +417,12 @@ private slots:
     void discardClient();
 
 private:
-    void init(uint port, QHostAddress *);
+    void init();
     enum ClientState { Unconnected, Protocol, Init, Connected };
+    QStringList mArgs;
     QTimer *timer;
     QTcpServer *serverSocket;
-    QTcpSocket *client;
+    QVNCSocket *client;
     ClientState state;
     quint8 msgType;
     bool handleMsg;
@@ -453,7 +455,7 @@ private:
 class QVNCScreenPrivate : public QObject
 {
 public:
-    QVNCScreenPrivate(QVNCScreen *parent, int display, QHostAddress *addr);
+    QVNCScreenPrivate(QVNCScreen *parent, const QStringList &args);
     ~QVNCScreenPrivate();
 
     void setDirty(const QRect &rect, bool force = false);
@@ -468,6 +470,39 @@ public:
 
     QVNCScreen *q_ptr;
 };
+
+class QVNCSocket : public QObject
+{
+Q_OBJECT
+public:
+    enum TxMode {
+        RawSocket,
+        WebSocket,
+        SecureWebSocket
+    };
+    QVNCSocket(QTcpSocket *s, TxMode mode);
+    ~QVNCSocket();
+
+    /* Socket-like interfaces */
+    qint64 write(const char *buf, qint64 maxSize);
+    qint64 read(char *data, qint64 maxSize);
+    qint64 bytesAvailable() const;
+    QAbstractSocket::SocketState state();
+    bool flush();
+
+Q_SIGNALS:
+    void readyRead();
+    void disconnected();
+
+private:
+    QTcpSocket *socket;
+    TxMode mode;
+};
+
+static inline int defaultWidth() { return 1024; }
+static inline int defaultHeight() { return 768; }
+static inline int defaultDisplay() { return 0; }
+static inline QHostAddress *defaultAddr() { return new QHostAddress("127.0.0.1"); }
 
 QT_END_NAMESPACE
 #endif // QSCREENVNC_P_H

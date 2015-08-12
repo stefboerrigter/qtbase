@@ -58,12 +58,7 @@ QVNCScreen::~QVNCScreen()
 {
 }
 
-static inline int defaultWidth() { return 1024; }
-static inline int defaultHeight() { return 768; }
-static inline int defaultDisplay() { return 0; }
-static inline QHostAddress *defaultAddr() { return new QHostAddress("127.0.0.1"); }
-
-static void usage()
+void usage()
 {
     qWarning() << "VNC Platform Integration options:";
     qWarning() << "    size=<Width>x<Height> - set the display width and height";
@@ -77,37 +72,14 @@ static void usage()
 bool QVNCScreen::initialize()
 {
     QRegularExpression sizeRx(QLatin1String("size=(\\d+)x(\\d+)"));
-    QRegularExpression displayRx(QLatin1String("display=(\\d+)"));
-    QRegularExpression addrRx(QLatin1String("addr=(\\S+)"));
     QRect userGeometry;
     bool showUsage = false;
-    int display = defaultDisplay();
-    QHostAddress *addr = defaultAddr();
-    QHostAddress *uaddr;
-    int udisplay;
 
     foreach (const QString &arg, mArgs) {
         QRegularExpressionMatch match;
         if (arg.contains(sizeRx, &match)) {
             userGeometry.setSize(QSize(match.captured(1).toInt(), match.captured(2).toInt()));
             userGeometry.setTopLeft(QPoint(0, 0));
-        } else if (arg.contains(displayRx, &match)) {
-            udisplay = match.captured(1).toInt();
-            if (udisplay < 0 || udisplay > 100) { /* Paranoia */
-                qWarning() << "Invalid display, using" << display;
-            } else {
-                display = udisplay;
-            }
-        } else if (arg.contains(addrRx, &match)) {
-            uaddr = new QHostAddress(match.captured(1));
-            if (uaddr->isNull()) {
-                qWarning() << "Invalid address, using" << addr->toString();
-            } else {
-                addr = uaddr;
-            }
-        } else {
-            qWarning() << "Unknown VNC options:" << arg;
-            showUsage = true;
         }
     }
 
@@ -126,7 +98,7 @@ bool QVNCScreen::initialize()
     mPhysicalSize = userGeometry.size() * 254 / 720;
 
     QFbScreen::initializeCompositor();
-    d_ptr = new QVNCScreenPrivate(this, display, addr);
+    d_ptr = new QVNCScreenPrivate(this, mArgs);
     QVNCCursor *c = new QVNCCursor(d_ptr->vncServer, this);
     mCursor = c;
     d_ptr->vncServer->setCursor(c);
