@@ -367,6 +367,37 @@ private:
     friend class QRfbMultiColorHextile<SRC>;
 };
 
+class QVNCSocket : public QObject
+{
+    Q_OBJECT
+
+public:
+    enum SocketType {
+        Raw,
+        Web,
+        SecureWeb
+    };
+    QVNCSocket(QTcpSocket *s, SocketType mode);
+    ~QVNCSocket();
+
+    /* Socket-like interfaces */
+    qint64 write(const char *buf, qint64 maxSize);
+    qint64 read(char *data, qint64 maxSize);
+    qint64 bytesAvailable() const;
+    QAbstractSocket::SocketState state();
+    bool flush();
+
+Q_SIGNALS:
+    void setupComplete();
+    void readyRead();
+    void disconnected();
+
+private:
+    QTcpSocket *socket;
+    WebSocket *wsocket;
+    SocketType mode;
+};
+
 class QVNCServer : public QObject
 {
     Q_OBJECT
@@ -413,6 +444,7 @@ private:
 
 private slots:
     void acceptConnection();
+    void startConnection();
     void readClient();
     void checkUpdate();
     void discardClient();
@@ -451,6 +483,7 @@ private:
 
     QRfbEncoder *encoder;
     QVNCCursor *cursor;
+    QVNCSocket::SocketType mode;
 };
 
 class QVNCScreenPrivate : public QObject
@@ -470,36 +503,6 @@ public:
     QVNCServer *vncServer;
 
     QVNCScreen *q_ptr;
-};
-
-class QVNCSocket : public QObject
-{
-    Q_OBJECT
-
-public:
-    enum SocketType {
-        Raw,
-        Web,
-        SecureWeb
-    };
-    QVNCSocket(QTcpSocket *s, SocketType mode);
-    ~QVNCSocket();
-
-    /* Socket-like interfaces */
-    qint64 write(const char *buf, qint64 maxSize);
-    qint64 read(char *data, qint64 maxSize);
-    qint64 bytesAvailable() const;
-    QAbstractSocket::SocketState state();
-    bool flush();
-
-Q_SIGNALS:
-    void readyRead();
-    void disconnected();
-
-private:
-    QTcpSocket *socket;
-    WebSocket *wsocket;
-    SocketType mode;
 };
 
 static inline int defaultWidth() { return 1024; }

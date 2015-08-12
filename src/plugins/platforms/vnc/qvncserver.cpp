@@ -348,7 +348,7 @@ bool QRfbClientCutText::read(QVNCSocket *s)
 //===========================================================================
 
 QVNCServer::QVNCServer(QVNCScreen *screen, const QStringList &args)
-    : mArgs(args), qvnc_screen(screen)
+    : mArgs(args), qvnc_screen(screen), mode(QVNCSocket::Raw)
 {
     init();
 }
@@ -370,6 +370,7 @@ void QVNCServer::init()
 
     QRegularExpression addrRx(QLatin1String("addr=(\\S+)"));
     QRegularExpression displayRx(QLatin1String("display=(\\d+)"));
+    QRegularExpression wsRx(QLatin1String("ws=(\\S+)"));
 
     foreach (const QString &arg, mArgs) {
         QRegularExpressionMatch match;
@@ -388,6 +389,8 @@ void QVNCServer::init()
             } else {
                 display = udisplay;
             }
+        } else if (arg.contains(wsRx, &match)) {
+            mode = QVNCSocket::Web;
         }
     }
 
@@ -401,7 +404,7 @@ void QVNCServer::init()
     if (!serverSocket->listen(*addr, port))
         qDebug() << "QVNCServer could not connect:" << serverSocket->errorString();
     else
-        qDebug() << "QVNCServer created on" << addr->toString() << "port" << port;
+        qDebug() << "QVNCServer created on" << addr->toString() << "port" << port << "mode" << ((mode == QVNCSocket::Web) ? "websocket" : "raw");
 
     connect(serverSocket, SIGNAL(newConnection()), this, SLOT(acceptConnection()));
 
@@ -424,6 +427,7 @@ void QVNCServer::setDirty()
     }
 }
 
+
 void QVNCServer::acceptConnection()
 {
     QTcpSocket *sock;
@@ -432,9 +436,20 @@ void QVNCServer::acceptConnection()
         delete client;
 
     sock = serverSocket->nextPendingConnection();
-    client = new QVNCSocket(sock, QVNCSocket::Web);
-    connect(client,SIGNAL(readyRead()),this,SLOT(readClient()));
-    connect(client,SIGNAL(disconnected()),this,SLOT(discardClient()));
+    client = new QVNCSocket(sock, mode);
+    connect(client, SIGNAL(readyRead()), this, SLOT(readClient()));
+    connect(client, SIGNAL(disconnected()), this, SLOT(discardClient()));
+    if (mode == QVNCSocket::Raw) {
+        startConnection();
+    } else {
+        connect(client, SIGNAL(setupComplete()), this,
+            SLOT(startConnection()));
+    }
+}
+
+void QVNCServer::startConnection()
+{
+    qDebug() << __PRETTY_FUNCTION__;
     handleMsg = false;
     encodingsPending = 0;
     cutTextPending = 0;
@@ -827,8 +842,10 @@ void QVNCServer::pointerEvent()
             QEvent::Type type = QEvent::MouseMove;
             Qt::MouseButton button = Qt::NoButton;
             bool isPress;
-            if (buttonChange(buttons, ev.buttons, &button, &isPress))
+            if (buttonChange(buttons, ev.buttons, &button, &isPress)) {
                 type = isPress ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease;
+                qDebug() << type;
+            }
             QWindowSystemInterface::handleMouseEvent(0, eventPoint, eventPoint, ev.buttons);
         } else {
             // No buttons or motion reported at the same time as wheel events
@@ -1852,6 +1869,7 @@ QVNCSocket::QVNCSocket(QTcpSocket *s, QVNCSocket::SocketType mode)
         wsocket = new WebSocket(socket);
         connect(wsocket, SIGNAL(readyRead()), this, SIGNAL(readyRead()));
         connect(wsocket, SIGNAL(disconnected()), this, SIGNAL(disconnected()));
+        connect(wsocket, SIGNAL(setupComplete()), this, SIGNAL(setupComplete()));
     }
 }
 
@@ -1866,7 +1884,6 @@ QVNCSocket::~QVNCSocket()
 
 qint64 QVNCSocket::write(const char *buf, qint64 maxSize)
 {
-    return socket->write(buf, maxSize);
     if (mode == Raw) {
         return socket->write(buf, maxSize);
     } else {

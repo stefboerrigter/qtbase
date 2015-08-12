@@ -18,7 +18,7 @@ public:
     bool flush();
 
 Q_SIGNALS:
-    void newConnection();
+    void setupComplete();
     void readyRead();
     void disconnected();
 
@@ -51,7 +51,7 @@ private:
     void sendHeader(QString header, QString value);
     void sendError(int code, QString message);
     void endHeaders();
-    void sendHandshake();
+    bool sendHandshake();
     void decodeFrame();
     void encodeFrame();
     void abort(QString message);
