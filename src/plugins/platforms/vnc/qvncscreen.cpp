@@ -43,6 +43,7 @@
 #include "qvncscreen.h"
 #include "qvnccursor.h"
 #include "qvncserver.h"
+#include "websocket.h"
 #include <QtCore/QRegularExpression>
 #include <QtGui/QPainter>
 #include <QDebug>
