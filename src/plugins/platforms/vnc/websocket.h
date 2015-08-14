@@ -8,6 +8,7 @@ class WebSocket: public QObject
     Q_OBJECT
 
 public:
+    WebSocket(QTcpSocket *sock, int buftime);
     WebSocket(QTcpSocket *sock);
     ~WebSocket();
 
@@ -25,6 +26,7 @@ Q_SIGNALS:
 private slots:
     void readClient();
     void discardClient();
+    void flushOutbuf();
 
 private:
     QTcpSocket *socket;
@@ -35,8 +37,10 @@ private:
     QString subprotocol;
     QByteArray request;
     QByteArray frame;
-    QByteArray databuf;
+    QByteArray inbuf;
+    QByteArray outbuf;
     qint64 wantbytes;
+    int buftime;
 
     enum {
         OpContinuation = 0x0,
@@ -50,14 +54,15 @@ private:
     void sendResponse(int code, QString response);
     void sendHeader(QString header, QString value);
     void sendError(int code, QString message);
+    qint64 sendFrame(QByteArray buf);
     void endHeaders();
+    bool processHeader();
     bool sendHandshake();
-    void decodeFrame();
+    bool decodeFrame();
     void encodeFrame();
     void abort(QString message);
     void sendPong();
     void sendClose();
-    void sendFrame(QByteArray b);
 
 };
 

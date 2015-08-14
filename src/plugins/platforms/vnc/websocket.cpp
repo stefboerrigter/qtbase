@@ -8,10 +8,31 @@
 #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 
 WebSocket::WebSocket(QTcpSocket *sock)
-:   socket(sock), state(Request)
+:   WebSocket::WebSocket(sock, 50)
+{
+}
+
+WebSocket::WebSocket(QTcpSocket *sock, int buftime)
+:   socket(sock), state(Request), buftime(buftime)
 {
     connect(socket, SIGNAL(readyRead()), this, SLOT(readClient()));
     connect(socket, SIGNAL(disconnected()), this, SLOT(discardClient()));
+    if (buftime == 0) {
+        /* Frame and send buffered writes as fast as possible */
+        connect(socket, SIGNAL(bytesWritten(qint64)), this,
+            SLOT(flushOutbuf()));
+    } else if (buftime > 0) {
+        /*
+         * Buffer writes up to buftime msec. This helps reduce the number
+         * of frames. Sending a large number of very small frames impacts
+         * browser performance.
+         */
+        QTimer *timer = new QTimer(this);
+        connect(timer, SIGNAL(timeout()), this, SLOT(flushOutbuf()));
+        timer->start(buftime);
+    } else if (buftime < 0) {
+        /* Writes are buffered until a flush() */
+    }
 }
 
 WebSocket::~WebSocket()
@@ -20,60 +41,77 @@ WebSocket::~WebSocket()
 
 void WebSocket::readClient()
 {
-    QByteArray line;
-    switch (state) {
-        case Request:
-            if (socket->canReadLine()) {
+    while (socket->bytesAvailable()) {
+        switch (state) {
+            case Request:
+                if (!socket->canReadLine()) {
+                    return;
+                }
                 request = socket->readLine().trimmed();
-            }
-            state = Header;
-            /* Fall through */
+                state = Header;
+                /* Fall through */
 
-        case Header:
-            while (socket->canReadLine()) {
-                line = socket->readLine();
-                int colon = line.indexOf(':');
-                if (colon == -1) {
-                    /* Last line */
+            case Header:
+                if (!socket->canReadLine()) {
+                    return;
+                }
+                if (processHeader()) {
                     state = Response;
-                    readClient();
+                    /* Last header reached, fall through */
+                } else {
                     break;
                 }
-                QString header = line.left(colon).trimmed().toLower();
-                QString value = line.mid(colon + 1).trimmed();
-                headers[header] = value;
-            }
-            break;
 
-        case Response:
-            if (sendHandshake()) {
-                state = FrameStart;
-                emit setupComplete();
-            } else {
-                abort("Websocket handshake failed");
-            }
-            break;
-
-        case FrameStart:
-            frame.clear();
-            wantbytes = 6;
-            state = Frame;
-            /* Fall through */
-
-        case Frame:
-            if (socket->bytesAvailable() < wantbytes) {
+            case Response:
+                if (sendHandshake()) {
+                    state = FrameStart;
+                    emit setupComplete();
+                } else {
+                    abort("Websocket handshake failed");
+                    return;
+                }
                 break;
-            }
-            frame.append(socket->read(wantbytes));
-            decodeFrame();
-            break;
-        
-        default:
-            break;
+
+            case FrameStart:
+                frame.clear();
+                wantbytes = 6;
+                state = Frame;
+                /* Fall through */
+
+            case Frame:
+                if (socket->bytesAvailable() < wantbytes) {
+                    return;
+                }
+                frame.append(socket->read(wantbytes));
+                if (!decodeFrame()) {
+                    return;
+                }
+                break;
+            
+            default:
+                break;
+        }
     }
 }
 
-void WebSocket::decodeFrame()
+bool WebSocket::processHeader()
+{
+    QByteArray line;
+
+    line = socket->readLine();
+    int colon = line.indexOf(':');
+    if (colon == -1) {
+        /* Last line */
+        return true;
+    } else {
+        QString header = line.left(colon).trimmed().toLower();
+        QString value = line.mid(colon + 1).trimmed();
+        headers[header] = value;
+    }
+    return false;
+}
+
+bool WebSocket::decodeFrame()
 {
 
     qint64 framelen = 6; /* Minimum frame size: 2 bytes header, 4 mask */
@@ -88,11 +126,11 @@ void WebSocket::decodeFrame()
 
     if (reserved) {
         abort("Reserved bit set in frame");
-        return;
+        return false;
     }
     if (!masked) {
         abort("Frame not masked");
-        return;
+        return false;
     }
     int payload_len = (unsigned char)(framebuf[1] & (~0x80));
     if (payload_len < 126) {
@@ -107,19 +145,17 @@ void WebSocket::decodeFrame()
     } else if (payload_len == 127) {
         if (frame.size() < 10) {
             wantbytes = 10 - frame.size();
-            readClient();
-            return;
+            return true;
         }
         framelen += 8;
         datalen = ntohll(*(quint64 *)(framebuf + 2));
         framelen += datalen;
         mask = framebuf + 10;
     }
-    //qDebug() << "framesize" << frame.size() << "framelen" << framelen << "datalen" << datalen << databuf;
+    //qDebug() << "framesize" << frame.size() << "framelen" << framelen << "datalen" << datalen << inbuf;
     if (frame.size() < framelen) {
         wantbytes = framelen - frame.size();
-        readClient();
-        return;
+        return true;
     }
 
     /* We have a full frame at last */
@@ -144,7 +180,7 @@ void WebSocket::decodeFrame()
         case OpBinaryFrame:
             mdata = mask + 4; /* masked data */
             for (qint64 i = 0; i < datalen; i++) {
-                databuf.append(mdata[i] ^ mask[i % 4]);
+                inbuf.append(mdata[i] ^ mask[i % 4]);
             }
             state = FrameStart;
             emit readyRead();
@@ -155,10 +191,15 @@ void WebSocket::decodeFrame()
             qDebug() << "Unknown opcode, ignoring" << opcode;
             break;
     }
+    return true;
 }
 
 void WebSocket::sendPong()
 {
+    QByteArray msg;
+    unsigned char b0 = 0x80 | OpPong;
+    msg.append(b0);
+    (void)socket->write(msg.constData(), msg.size());
 }
 
 void WebSocket::sendClose()
@@ -166,9 +207,10 @@ void WebSocket::sendClose()
     abort("Should really do an orderly close"); // XXX
 }
 
-qint64 WebSocket::write(const char *buf, qint64 datalen)
+qint64 WebSocket::sendFrame(QByteArray buf)
 {
     QByteArray msg;
+    qint64 datalen = buf.size();
     unsigned char b0 = 0x80 | OpBinaryFrame;
 
     msg.append(b0);
@@ -183,7 +225,7 @@ qint64 WebSocket::write(const char *buf, qint64 datalen)
         msg.append((quint8)127);
         msg.append((const char *)&x, 8);
     }
-    msg.append(buf, datalen);
+    msg.append(buf);
     return socket->write(msg.constData(), msg.size());
 }
 
@@ -264,20 +306,41 @@ void WebSocket::discardClient()
     emit disconnected();
 }
 
+void WebSocket::flushOutbuf()
+{
+    if (outbuf.size()) {
+        sendFrame(outbuf);
+        outbuf.clear();
+    }
+}
+
+qint64 WebSocket::write(const char *buf, qint64 size)
+{
+    outbuf.append(buf, size);
+
+    if (buftime == 0 && socket->bytesToWrite() == 0) {
+        flushOutbuf();
+    } else if (buftime < 0) {
+        flushOutbuf();
+    }
+    return size;
+}
+
 qint64 WebSocket::read(char *data, qint64 maxSize)
 {
-    qint64 copy = qMin<qint64>(databuf.size(), maxSize);
-    memcpy(data, databuf.constData(), copy);
-    databuf.remove(0, copy);
+    qint64 copy = qMin<qint64>(inbuf.size(), maxSize);
+    memcpy(data, inbuf.constData(), copy);
+    inbuf.remove(0, copy);
     return copy;
 }
 
 qint64 WebSocket::bytesAvailable() const
 {
-    return databuf.size();
+    return inbuf.size();
 }
 
 bool WebSocket::flush()
 {
+    flushOutbuf();
     return socket->flush();
 }
