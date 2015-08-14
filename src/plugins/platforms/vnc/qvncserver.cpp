@@ -844,7 +844,6 @@ void QVNCServer::pointerEvent()
             bool isPress;
             if (buttonChange(buttons, ev.buttons, &button, &isPress)) {
                 type = isPress ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease;
-                qDebug() << type;
             }
             QWindowSystemInterface::handleMouseEvent(0, eventPoint, eventPoint, ev.buttons);
         } else {
