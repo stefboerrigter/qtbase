@@ -481,11 +481,37 @@ void QVNCServer::readClient()
                 client->read(proto, 12);
                 proto[12] = '\0';
                 qDebug("Client protocol version %s", proto);
-                // No authentication
-                quint32 auth = htonl(1);
-                client->write((char *) &auth, sizeof(auth));
-                state = Init;
+                password = "foobar";
+                if (password == "") {
+                    // No authentication
+                    quint32 auth = htonl(1);
+                    client->write((char *) &auth, sizeof(auth));
+                    state = Init;
+                } else {
+                    quint32 auth = htonl(2);
+                    client->write((char *) &auth, sizeof(auth));
+                    fillChallenge();
+                    client->write(challenge, CHALLENGESIZE);
+                    state = Auth;
+                }
             }
+            break;
+
+        case Auth:
+            if (client->bytesAvailable() >= CHALLENGESIZE) {
+                char response[16];
+                client->read(response, CHALLENGESIZE);
+                if (verifyChallenge(response)) {
+                    quint32 res = htonl(0);
+                    client->write((char *) &res, sizeof(res));
+                    state = Init;
+                } else {
+                    quint32 res = htonl(1);
+                    client->write((char *) &res, sizeof(res));
+                    discardClient();
+                }
+            }
+
             break;
 
         case Init:
@@ -655,6 +681,36 @@ bool QVNCScreen::swapBytes() const
     return frameBufferLittleEndian();
 }
 #endif
+
+void QVNCServer::fillChallenge()
+{
+    static bool seed_set = false;
+
+    if (!seed_set) {
+        qsrand((uint)time(NULL) ^ (uint)getpid());
+        seed_set = true;
+    }
+    for (int i = 0; i < CHALLENGESIZE; i++) {
+        challenge[i] = (char)(qrand() & 0xff);
+    }
+}
+
+bool QVNCServer::verifyChallenge(char *response)
+{
+    char key[8];
+    char encrypted[CHALLENGESIZE];
+    QByteArray pwd = password.toUtf8();
+
+    for (int i = 0; i < 8; i++) {
+        if (i < pwd.size()) {
+            key[i] = pwd[i];
+        } else {
+            key[i] = 0;
+        }
+    }
+
+    return false;
+}
 
 void QVNCServer::setPixelFormat()
 {

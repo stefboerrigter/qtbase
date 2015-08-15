@@ -60,6 +60,8 @@ class QVNCSocket;
 #define MAP_WIDTH 1280 / MAP_TILE_SIZE
 #define MAP_HEIGHT 1024 / MAP_TILE_SIZE
 
+#define CHALLENGESIZE 16
+
 class QVNCDirtyMap
 {
 public:
@@ -442,6 +444,8 @@ private:
     void keyEvent();
     void clientCutText();
     bool pixelConversionNeeded() const;
+    void fillChallenge();
+    bool verifyChallenge(char *response);
 
 private slots:
     void acceptConnection();
@@ -452,7 +456,7 @@ private slots:
 
 private:
     void init();
-    enum ClientState { Unconnected, Protocol, Init, Connected };
+    enum ClientState { Unconnected, Protocol, Init, Auth, Connected };
     QStringList mArgs;
     QTimer *timer;
     QTcpServer *serverSocket;
@@ -486,6 +490,8 @@ private:
     QVNCCursor *cursor;
     QVNCSocket::SocketType mode;
     QUrl ws_viewer;
+    QString password;
+    char challenge[CHALLENGESIZE];
 };
 
 class QVNCScreenPrivate : public QObject
