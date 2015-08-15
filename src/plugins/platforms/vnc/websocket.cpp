@@ -7,14 +7,25 @@
 #define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
 #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 
-WebSocket::WebSocket(QTcpSocket *sock)
-:   WebSocket::WebSocket(sock, 50)
+WebSocket::WebSocket(QTcpSocket *sock, QUrl viewer)
+:   WebSocket::WebSocket(sock, viewer, 50)
 {
 }
 
-WebSocket::WebSocket(QTcpSocket *sock, int buftime)
-:   socket(sock), state(Request), buftime(buftime)
+WebSocket::WebSocket(QTcpSocket *sock, QUrl vurl, int buftime)
+:   socket(sock), state(Request), viewer(vurl), buftime(buftime)
 {
+    QUrl ourl;
+
+    ourl.setScheme(viewer.scheme());
+    ourl.setHost(viewer.host());
+    ourl.setPort(viewer.port());
+    origin = ourl.toString();
+
+    if (!viewer.hasFragment()) {
+        QString frag = QString("host=%1&port=%2").arg(socket->localAddress().toString()).arg(sock->localPort());
+        viewer.setFragment(frag);
+    }
     connect(socket, SIGNAL(readyRead()), this, SLOT(readClient()));
     connect(socket, SIGNAL(disconnected()), this, SLOT(discardClient()));
     if (buftime == 0) {
@@ -43,6 +54,9 @@ void WebSocket::readClient()
 {
     while (socket->bytesAvailable()) {
         switch (state) {
+            case Unconnected:
+                return;
+
             case Request:
                 if (!socket->canReadLine()) {
                     return;
@@ -55,20 +69,16 @@ void WebSocket::readClient()
                 if (!socket->canReadLine()) {
                     return;
                 }
-                if (processHeader()) {
-                    state = Response;
-                    /* Last header reached, fall through */
-                } else {
+                state = processHeader();
+                if (state != Response) {
                     break;
                 }
+                /* Last header reached, fall through */
 
             case Response:
-                if (sendHandshake()) {
-                    state = FrameStart;
+                state = sendHandshake();
+                if (state == FrameStart) {
                     emit setupComplete();
-                } else {
-                    abort("Websocket handshake failed");
-                    return;
                 }
                 break;
 
@@ -83,9 +93,7 @@ void WebSocket::readClient()
                     return;
                 }
                 frame.append(socket->read(wantbytes));
-                if (!decodeFrame()) {
-                    return;
-                }
+                state = decodeFrame();
                 break;
             
             default:
@@ -94,7 +102,7 @@ void WebSocket::readClient()
     }
 }
 
-bool WebSocket::processHeader()
+WebSocket::WState WebSocket::processHeader()
 {
     QByteArray line;
 
@@ -102,16 +110,16 @@ bool WebSocket::processHeader()
     int colon = line.indexOf(':');
     if (colon == -1) {
         /* Last line */
-        return true;
+        return Response;
     } else {
         QString header = line.left(colon).trimmed().toLower();
         QString value = line.mid(colon + 1).trimmed();
         headers[header] = value;
     }
-    return false;
+    return Header;
 }
 
-bool WebSocket::decodeFrame()
+WebSocket::WState WebSocket::decodeFrame()
 {
 
     qint64 framelen = 6; /* Minimum frame size: 2 bytes header, 4 mask */
@@ -126,11 +134,11 @@ bool WebSocket::decodeFrame()
 
     if (reserved) {
         abort("Reserved bit set in frame");
-        return false;
+        return Unconnected;
     }
     if (!masked) {
         abort("Frame not masked");
-        return false;
+        return Unconnected;
     }
     int payload_len = (unsigned char)(framebuf[1] & (~0x80));
     if (payload_len < 126) {
@@ -145,7 +153,7 @@ bool WebSocket::decodeFrame()
     } else if (payload_len == 127) {
         if (frame.size() < 10) {
             wantbytes = 10 - frame.size();
-            return true;
+            return Frame;
         }
         framelen += 8;
         datalen = ntohll(*(quint64 *)(framebuf + 2));
@@ -155,23 +163,21 @@ bool WebSocket::decodeFrame()
     //qDebug() << "framesize" << frame.size() << "framelen" << framelen << "datalen" << datalen << inbuf;
     if (frame.size() < framelen) {
         wantbytes = framelen - frame.size();
-        return true;
+        return Frame;
     }
 
     /* We have a full frame at last */
     switch (opcode) {
         case OpPing:
             sendPong();
-            state = FrameStart;
             break;
 
         case OpClose:
             sendClose();
-            state = Unconnected;
+            return Unconnected;
             break;
 
         case OpPong: /* Pong, ignore */
-            state = FrameStart;
             qDebug() << "Pong, ignoring" << opcode;
             break;
 
@@ -182,16 +188,14 @@ bool WebSocket::decodeFrame()
             for (qint64 i = 0; i < datalen; i++) {
                 inbuf.append(mdata[i] ^ mask[i % 4]);
             }
-            state = FrameStart;
             emit readyRead();
             break;
 
         default: /* We don't know these opcodes */
-            state = FrameStart;
             qDebug() << "Unknown opcode, ignoring" << opcode;
             break;
     }
-    return true;
+    return FrameStart;
 }
 
 void WebSocket::sendPong()
@@ -229,15 +233,31 @@ qint64 WebSocket::sendFrame(QByteArray buf)
     return socket->write(msg.constData(), msg.size());
 }
 
-bool WebSocket::sendHandshake()
+WebSocket::WState WebSocket::sendHandshake()
 {
-    if (headers["sec-websocket-version"] != "13") {
-        sendError(404, "Websocket version not supported");
-        return false;
+    if (headers["upgrade"].toLower() != "websocket") {
+        /*
+         * If we get a regular non-websocket HTTP request, redirect to the
+         * viewer URL, which hopefully implements a websocket-based VNC player.
+         */
+        sendResponse(307, "Redirect to viewer");
+        sendHeader("Connection", "close");
+        sendHeader("Location", viewer.toString());
+        endHeaders();
+        socket->close();
+        return Unconnected;
     }
-    if (!headers.contains("sec-websocket-key")) {
-        sendError(404, "Websocket key header not found");
-        return false;
+
+    if (headers["connection"].toLower() != "upgrade" ||
+        headers["sec-websocket-version"] != "13" ||
+        !headers.contains("sec-websocket-key")) {
+        sendError(400, "Bad request");
+        return Unconnected;
+    }
+
+    if (headers["origin"] != "" && headers["origin"] != origin) {
+        sendError(403, "Bad origin");
+        return Unconnected;
     }
     if (headers.contains("sec-websocket-protocol")) {
         QStringList dtypes = headers["sec-websocket-protocol"].split(QRegExp(",\\s*"));
@@ -259,7 +279,7 @@ bool WebSocket::sendHandshake()
         sendHeader("Sec-WebSocket-Protocol", subprotocol);
     }
     endHeaders();
-    return true;
+    return FrameStart;
 }
 
 void WebSocket::sendResponse(int code, QString response)
@@ -285,10 +305,11 @@ void WebSocket::endHeaders()
 
 void WebSocket::sendError(int code, QString message)
 {
+    qDebug() << __PRETTY_FUNCTION__ << code << message;
     sendResponse(code, message);
     sendHeader("Connection", "close");
     endHeaders();
-    socket->flush();
+    socket->close();
 }
 
 void WebSocket::abort(QString message)
