@@ -45,6 +45,7 @@
 #include <QtCore/qvarlengtharray.h>
 #include <QtCore/qsharedmemory.h>
 #include <QtNetwork>
+#include <QUrl>
 
 #include "qvncscreen.h"
 #include "websocket.h"
@@ -377,7 +378,7 @@ public:
         Web,
         SecureWeb
     };
-    QVNCSocket(QTcpSocket *s, SocketType mode);
+    QVNCSocket(QTcpSocket *s, SocketType mode, QUrl viewer);
     ~QVNCSocket();
 
     /* Socket-like interfaces */
@@ -484,6 +485,7 @@ private:
     QRfbEncoder *encoder;
     QVNCCursor *cursor;
     QVNCSocket::SocketType mode;
+    QUrl ws_viewer;
 };
 
 class QVNCScreenPrivate : public QObject

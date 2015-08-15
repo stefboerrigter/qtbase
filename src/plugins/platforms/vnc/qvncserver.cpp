@@ -367,6 +367,7 @@ void QVNCServer::init()
     int port;
     QHostAddress *addr = defaultAddr();
     QHostAddress *uaddr;
+    QUrl url;
 
     QRegularExpression addrRx(QLatin1String("addr=(\\S+)"));
     QRegularExpression displayRx(QLatin1String("display=(\\d+)"));
@@ -390,7 +391,13 @@ void QVNCServer::init()
                 display = udisplay;
             }
         } else if (arg.contains(wsRx, &match)) {
-            mode = QVNCSocket::Web;
+            url = QUrl(QUrl::fromPercentEncoding(match.captured(1).toUtf8()));
+            if (url.isValid()) {
+                mode = QVNCSocket::Web;
+                ws_viewer = url;
+            } else {
+                qWarning() << "Invalid URL, falling back to raw mode";
+            }
         }
     }
 
@@ -436,7 +443,7 @@ void QVNCServer::acceptConnection()
         delete client;
 
     sock = serverSocket->nextPendingConnection();
-    client = new QVNCSocket(sock, mode);
+    client = new QVNCSocket(sock, mode, ws_viewer);
     connect(client, SIGNAL(readyRead()), this, SLOT(readClient()));
     connect(client, SIGNAL(disconnected()), this, SLOT(discardClient()));
     if (mode == QVNCSocket::Raw) {
@@ -589,7 +596,7 @@ void QVNCServer::readClient()
                 }
                 sim.width = qvnc_screen->geometry().width();
                 sim.height = qvnc_screen->geometry().height();
-                sim.setName("Qt for Embedded Linux VNC Server");
+                sim.setName("Qt VNC Server");
                 sim.write(client);
                 state = Connected;
             }
@@ -1858,14 +1865,14 @@ void QVNCScreenPrivate::setDirty(const QRect& rect, bool force)
     vncServer->setDirty();
 }
 
-QVNCSocket::QVNCSocket(QTcpSocket *s, QVNCSocket::SocketType mode)
+QVNCSocket::QVNCSocket(QTcpSocket *s, QVNCSocket::SocketType mode, QUrl viewer)
     : socket(s), mode(mode)
 {
     if (mode == Raw) {
         connect(socket, SIGNAL(readyRead()), this, SIGNAL(readyRead()));
         connect(socket, SIGNAL(disconnected()), this, SIGNAL(disconnected()));
     } else if (mode == Web) {
-        wsocket = new WebSocket(socket);
+        wsocket = new WebSocket(socket, viewer);
         connect(wsocket, SIGNAL(readyRead()), this, SIGNAL(readyRead()));
         connect(wsocket, SIGNAL(disconnected()), this, SIGNAL(disconnected()));
         connect(wsocket, SIGNAL(setupComplete()), this, SIGNAL(setupComplete()));

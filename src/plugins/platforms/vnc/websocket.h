@@ -2,14 +2,15 @@
 #define _WEBSOCKET_H
 
 #include <QtNetwork>
+#include <QUrl>
 
 class WebSocket: public QObject
 {
     Q_OBJECT
 
 public:
-    WebSocket(QTcpSocket *sock, int buftime);
-    WebSocket(QTcpSocket *sock);
+    WebSocket(QTcpSocket *sock, QUrl viewer, int buftime);
+    WebSocket(QTcpSocket *sock, QUrl viewer);
     ~WebSocket();
 
     /* Socket-like interfaces */
@@ -30,15 +31,17 @@ private slots:
 
 private:
     QTcpSocket *socket;
-    enum ClientState {Unconnected, Request, Header, Response, FrameStart,
+    enum WState {Unconnected, Request, Header, Response, FrameStart,
         Frame};
-    ClientState state;
+    WState state;
     QHash<QString, QString> headers;
     QString subprotocol;
     QByteArray request;
     QByteArray frame;
     QByteArray inbuf;
     QByteArray outbuf;
+    QUrl viewer;
+    QString origin;
     qint64 wantbytes;
     int buftime;
 
@@ -56,9 +59,9 @@ private:
     void sendError(int code, QString message);
     qint64 sendFrame(QByteArray buf);
     void endHeaders();
-    bool processHeader();
-    bool sendHandshake();
-    bool decodeFrame();
+    WState processHeader();
+    WState sendHandshake();
+    WState decodeFrame();
     void encodeFrame();
     void abort(QString message);
     void sendPong();
