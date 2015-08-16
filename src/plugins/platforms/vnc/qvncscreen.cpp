@@ -48,10 +48,11 @@
 #include <QtGui/QPainter>
 #include <QDebug>
 
+#include <QtPlatformSupport/private/qfbwindow_p.h>
 QT_BEGIN_NAMESPACE
 
 QVNCScreen::QVNCScreen(const QStringList &args)
-    : mArgs(args)
+    : mArgs(args), maximize(defaultMaximize())
 {
 }
 
@@ -68,11 +69,16 @@ void usage()
     qWarning() << "         defaults to" << defaultDisplay();
     qWarning() << "    addr=<IP> - listen on the IPv4 address IP";
     qWarning() << "         defaults to" << defaultAddr()->toString();
+    qWarning() << "    maximize=<bool> - Maximize first window";
+    qWarning() << "         defaults to" << defaultMaximize();
+    qWarning() << "    ws=<URL> - Websocket mode; redirect to HTML5 VNC viewer URL";
+    qWarning() << "         off by default";
 }
 
 bool QVNCScreen::initialize()
 {
     QRegularExpression sizeRx(QLatin1String("size=(\\d+)x(\\d+)"));
+    QRegularExpression maximizeRx(QLatin1String("maximize=(\\S+)"));
     QRect userGeometry;
     bool showUsage = false;
 
@@ -81,6 +87,14 @@ bool QVNCScreen::initialize()
         if (arg.contains(sizeRx, &match)) {
             userGeometry.setSize(QSize(match.captured(1).toInt(), match.captured(2).toInt()));
             userGeometry.setTopLeft(QPoint(0, 0));
+        } else if (arg.contains(maximizeRx, &match)) {
+            if (match.captured(1) == "false") {
+                maximize = false;
+            } else if (match.captured(1) == "true") {
+                maximize = true;
+            } else {
+                showUsage = true;
+            }
         }
     }
 
@@ -107,6 +121,17 @@ bool QVNCScreen::initialize()
     return true;
 }
 
+void QVNCScreen::addWindow(QFbWindow *window)
+{
+    static bool firstwindow = true;
+
+    QFbScreen::addWindow(window);
+    if (firstwindow && maximize) {
+        firstwindow = false;
+        window->setWindowState(Qt::WindowMaximized);
+        window->setVisible(true);
+    }
+}
 
 QRegion QVNCScreen::doRedraw()
 {
