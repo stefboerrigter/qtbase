@@ -69,10 +69,12 @@ void usage()
     qWarning() << "         defaults to" << defaultDisplay();
     qWarning() << "    addr=<IP> - listen on the IPv4 address IP";
     qWarning() << "         defaults to" << defaultAddr()->toString();
+    qWarning() << "    mode=<m> - raw or websocket mode";
+    qWarning() << "         defaults to raw";
     qWarning() << "    maximize=<bool> - Maximize first window";
     qWarning() << "         defaults to" << defaultMaximize();
-    qWarning() << "    ws=<URL> - Websocket mode; redirect to HTML5 VNC viewer URL";
-    qWarning() << "         off by default";
+    qWarning() << "    viewer=<URL> - HTML5 VNC viewer URL";
+    qWarning() << "         defaults to" << defaultViewer();
 }
 
 bool QVNCScreen::initialize()

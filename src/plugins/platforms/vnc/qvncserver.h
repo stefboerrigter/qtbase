@@ -511,6 +511,7 @@ static inline int defaultWidth() { return 800; }
 static inline int defaultHeight() { return 600; }
 static inline int defaultDisplay() { return 0; }
 static inline bool defaultMaximize() { return true; }
+static inline QUrl defaultViewer() { return QUrl("http://pigshell.github.io/noVNC/qtvnc.html"); }
 static inline QHostAddress *defaultAddr() { return new QHostAddress("127.0.0.1"); }
 
 QT_END_NAMESPACE

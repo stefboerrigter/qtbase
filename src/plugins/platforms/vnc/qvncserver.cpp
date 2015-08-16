@@ -348,7 +348,7 @@ bool QRfbClientCutText::read(QVNCSocket *s)
 //===========================================================================
 
 QVNCServer::QVNCServer(QVNCScreen *screen, const QStringList &args)
-    : mArgs(args), qvnc_screen(screen), mode(QVNCSocket::Raw)
+    : mArgs(args), qvnc_screen(screen), mode(QVNCSocket::Raw), ws_viewer(defaultViewer())
 {
     init();
 }
@@ -363,15 +363,13 @@ void QVNCServer::init()
     state = Unconnected;
     dirtyCursor = false;
     int display = defaultDisplay();
-    int udisplay;
-    int port;
     QHostAddress *addr = defaultAddr();
     QHostAddress *uaddr;
-    QUrl url;
 
     QRegularExpression addrRx(QLatin1String("addr=(\\S+)"));
     QRegularExpression displayRx(QLatin1String("display=(\\d+)"));
-    QRegularExpression wsRx(QLatin1String("ws=(\\S+)"));
+    QRegularExpression viewerRx(QLatin1String("viewer=(\\S+)"));
+    QRegularExpression modeRx(QLatin1String("mode=(\\S+)"));
 
     foreach (const QString &arg, mArgs) {
         QRegularExpressionMatch match;
@@ -384,25 +382,33 @@ void QVNCServer::init()
                 addr = uaddr;
             }
         } else if (arg.contains(displayRx, &match)) {
+            int udisplay;
             udisplay = match.captured(1).toInt();
             if (udisplay < 0 || udisplay > 100) { /* Paranoia */
                 qWarning() << "Invalid display, using" << display;
             } else {
                 display = udisplay;
             }
-        } else if (arg.contains(wsRx, &match)) {
-            url = QUrl(QUrl::fromPercentEncoding(match.captured(1).toUtf8()));
+        } else if (arg.contains(viewerRx, &match)) {
+            QUrl url(QUrl::fromPercentEncoding(match.captured(1).toUtf8()));
             if (url.isValid()) {
-                mode = QVNCSocket::Web;
                 ws_viewer = url;
             } else {
-                qWarning() << "Invalid URL, falling back to raw mode";
+                qWarning() << "Invalid viewer URL, using" << ws_viewer;
+            }
+        } else if (arg.contains(modeRx, &match)) {
+            if (match.captured(1) == "raw") {
+                mode = QVNCSocket::Raw;
+            } else if (match.captured(1) == "websocket") {
+                mode = QVNCSocket::Web;
+            } else {
+                qWarning() << "Invalid mode, using" << "raw";
             }
         }
     }
 
     refreshRate = 25;
-    port = 5900 + display;
+    int port = 5900 + display;
     timer = new QTimer(this);
     timer->setSingleShot(true);
     connect(timer, SIGNAL(timeout()), this, SLOT(checkUpdate()));
