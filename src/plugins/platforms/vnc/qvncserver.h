@@ -507,9 +507,10 @@ public:
     QVNCScreen *q_ptr;
 };
 
-static inline int defaultWidth() { return 1024; }
-static inline int defaultHeight() { return 768; }
+static inline int defaultWidth() { return 800; }
+static inline int defaultHeight() { return 600; }
 static inline int defaultDisplay() { return 0; }
+static inline bool defaultMaximize() { return true; }
 static inline QHostAddress *defaultAddr() { return new QHostAddress("127.0.0.1"); }
 
 QT_END_NAMESPACE
