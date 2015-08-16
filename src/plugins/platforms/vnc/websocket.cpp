@@ -248,7 +248,7 @@ WebSocket::WState WebSocket::sendHandshake()
         return Unconnected;
     }
 
-    if (headers["connection"].toLower() != "upgrade" ||
+    if (!headers["connection"].contains("upgrade", Qt::CaseInsensitive) ||
         headers["sec-websocket-version"] != "13" ||
         !headers.contains("sec-websocket-key")) {
         sendError(400, "Bad request");
