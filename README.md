@@ -23,7 +23,7 @@ In the shell,
     export QT_QPA_PLATFORM=vnc
     export QT_DEBUG_PLUGINS=1
 
-Alternately, invoke the application with
+before starting the application. Alternately, invoke the application with
 
     /path/to/qtapp -platform vnc
 
@@ -31,38 +31,12 @@ For MacOS app bundles, this may be modified to
 
     /path/to/qtapp.app/Contents/MacOS/qtapp -platform vnc
 
-That's pretty much it. Run the Qt application. You should see messages
-appearing on the console, like
-
-    QVNCServer created on "127.0.0.1" port 5900 mode raw
-  
-Connect your vncviewer. If your app does not run maximized, it occupies a small
-window aligned to the top left.
-
-To create a 640x480 display, server listening on port 5901 on all interfaces,
-
-    /path/to/qtapp -platform vnc:size=640x480:display=1:addr=0.0.0.0
-
-## Viewing Qt apps in a browser
-
-To use a browser-based HTML5 VNC viewer, use the `mode=websocket` option.
-
-    /path/to/app -platform vnc:mode=websocket
-
-You should see a line like
+That's pretty much it. You should see messages appearing on the console, like
 
     QVNCServer created on "127.0.0.1" port 5900 mode websocket
-
-Navigate to http://localhost:5900 on the browser and you should see the
-application.
-
-In websocket mode, any regular HTTP request to http://localhost:5900 will be
-redirected to the viewer URL specified in the `viewer` parameter, with a hash
-fragment containing the host IP and port. In this case, it will redirect to
-the default viewer, `http://pigshell.github.io/noVNC/qtvnc.html#host=127.0.0.1&port=5900`
-
-This viewer is a fork of [noVNC](http://novnc.com), modified to take
-connection parameters in the URL fragment rather than the query string.
+  
+Navigate to http://localhost:5900 on any modern browser and you should be
+able to view and interact with the application.
 
 ## Options
 
@@ -78,14 +52,20 @@ or the `QT_QPA_PLATFORM` environment variable. The platform string starts with
     * Example: `addr=0.0.0.0` listens on all interfaces
     * Default: `addr=127.0.0.1`
   * `mode=<str>` One of `websocket` or `raw`. Use `websocket` to connect with
-    a browser-based HTML5 VNC viewer. The default is `raw`, which requires a
-    regular VNC client like _vncviewer_ or _Chicken of the VNC_.
-  * `viewer=<URL>` Sets the location of the HTML5 VNC viewer. Websocket requests
-    from other origins are rejected. Note that the colon needs to be URL-encoded
-    since Qt uses it as an option separator. Websocket requests from origins
-    other than the viewer will be rejected.
+    a browser-based HTML5 VNC viewer, or `raw` to use a regular VNC client like
+    _vncviewer_ or _Chicken of the VNC_.
+    * Default: `mode=websocket`
+  * `viewer=<URL>` Sets the location of the HTML5 VNC viewer. In `websocket`
+    mode, any regular HTTP request to the listening port will be issued an HTTP
+    redirect to the viewer URL, appended with a hash fragment containing
+    host and port parameters. Websocket requests from other origins are
+    rejected. Note that the colon needs to be URL-encoded since Qt uses it as
+    an option separator. Websocket requests from origins other than the viewer
+    will be rejected.
     * Default: `viewer=http%3A//pigshell.github.io/noVNC/qtvnc.html`
-  * `maximize=<bool>` Maximize first window.
+  * `maximize=<bool>` Maximize first window. Without this option, apps which
+    don't maximize themselves usually occupy a small window at the top left
+    of the frame buffer.
     * Default: `maximize=true`
 
 ## Gotchas
