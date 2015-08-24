@@ -1,19 +1,43 @@
+/*
+  Copyright (C) 2015 Coriolis Technologies Pvt Ltd, info@coriolis.co.in
+  Author: Ganesh Varadarajan
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+  
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the <organization> nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+  
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+  DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
 #include "websocket.h"
 #include <QDebug>
 #include <QtCore/QRegularExpression>
 #include <QCryptographicHash>
 #include <stdint.h>
+#include <arpa/inet.h>
 
 #define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
 #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 
-WebSocket::WebSocket(QTcpSocket *sock, QUrl viewer)
-:   WebSocket::WebSocket(sock, viewer, 50)
-{
-}
-
-WebSocket::WebSocket(QTcpSocket *sock, QUrl vurl, int buftime)
-:   socket(sock), state(Request), viewer(vurl), buftime(buftime)
+WebSocket::WebSocket(QObject *p, QTcpSocket *sock, QUrl vurl, int buftime)
+:   QObject::QObject(p), socket(sock), state(Request), viewer(vurl), buftime(buftime), timer(0)
 {
     QUrl ourl;
 
@@ -38,7 +62,7 @@ WebSocket::WebSocket(QTcpSocket *sock, QUrl vurl, int buftime)
          * of frames. Sending a large number of very small frames impacts
          * browser performance.
          */
-        QTimer *timer = new QTimer(this);
+        timer = new QTimer(this);
         connect(timer, SIGNAL(timeout()), this, SLOT(flushOutbuf()));
         timer->start(buftime);
     } else if (buftime < 0) {
@@ -52,11 +76,8 @@ WebSocket::~WebSocket()
 
 void WebSocket::readClient()
 {
-    while (socket->bytesAvailable()) {
+    while (state != Unconnected && socket->bytesAvailable()) {
         switch (state) {
-            case Unconnected:
-                return;
-
             case Request:
                 if (!socket->canReadLine()) {
                     return;
@@ -126,7 +147,6 @@ WebSocket::WState WebSocket::decodeFrame()
     qint64 datalen = 0; /* Length of payload data */
     const char *framebuf = frame.constData();
     const char *mask = 0;
-    const char *mdata = 0;
     unsigned char opcode = framebuf[0] & 0xf;
     //bool fin = (framebuf[0] >> 7) & 0x1;
     bool masked = (framebuf[1] >> 7) & 0x1;
@@ -147,7 +167,7 @@ WebSocket::WState WebSocket::decodeFrame()
         mask = framebuf + 2;
     } else if (payload_len == 126) {
         framelen += 2;
-        datalen = ntohs(*(unsigned short *)(framebuf + 2));
+        datalen = ntohs(*(quint16 *)(framebuf + 2));
         framelen += datalen;
         mask = framebuf + 4;
     } else if (payload_len == 127) {
@@ -166,14 +186,23 @@ WebSocket::WState WebSocket::decodeFrame()
         return Frame;
     }
 
+    QByteArray framedata;
+    if (opcode == OpPing || opcode == OpClose || opcode == OpContinuation ||
+        opcode == OpTextFrame || opcode == OpBinaryFrame) {
+        const char *mdata = mdata = mask + 4; /* masked data */
+        for (qint64 i = 0; i < datalen; i++) {
+            framedata.append(mdata[i] ^ mask[i % 4]);
+        }
+    }
+
     /* We have a full frame at last */
     switch (opcode) {
         case OpPing:
-            sendPong();
+            sendPong(framedata);
             break;
 
         case OpClose:
-            sendClose();
+            sendClose(framedata);
             return Unconnected;
             break;
 
@@ -184,10 +213,7 @@ WebSocket::WState WebSocket::decodeFrame()
         case OpContinuation:
         case OpTextFrame:
         case OpBinaryFrame:
-            mdata = mask + 4; /* masked data */
-            for (qint64 i = 0; i < datalen; i++) {
-                inbuf.append(mdata[i] ^ mask[i % 4]);
-            }
+            inbuf.append(framedata);
             emit readyRead();
             break;
 
@@ -198,21 +224,37 @@ WebSocket::WState WebSocket::decodeFrame()
     return FrameStart;
 }
 
-void WebSocket::sendPong()
+void WebSocket::sendPong(const QByteArray& framedata)
 {
     QByteArray msg;
     unsigned char b0 = 0x80 | OpPong;
     msg.append(b0);
+    if (framedata.size() < 126) {
+        msg.append(framedata);
+    }
     (void)socket->write(msg.constData(), msg.size());
 }
 
-void WebSocket::sendClose()
+void WebSocket::sendClose(const QByteArray& framedata, quint16 code)
 {
-    abort("Should really do an orderly close"); // XXX
+    QByteArray msg;
+    unsigned char b0 = 0x80 | OpClose;
+    msg.append(b0);
+    if (framedata.size() > 2) {
+        code = ntohs(*(quint16 *)framedata.constData());
+    }
+    code = htons(code);
+    msg.append((quint8)2);
+    msg.append((const char *)&code, 2);
+    socket->write(msg.constData(), msg.size());
+    socket->disconnectFromHost();
 }
 
-qint64 WebSocket::sendFrame(QByteArray buf)
+qint64 WebSocket::sendFrame(const QByteArray& buf)
 {
+    if (state == Unconnected) {
+        qDebug() << "GDB:" << "sending frame while unconnected?";
+    }
     QByteArray msg;
     qint64 datalen = buf.size();
     unsigned char b0 = 0x80 | OpBinaryFrame;
@@ -244,7 +286,7 @@ WebSocket::WState WebSocket::sendHandshake()
         sendHeader("Connection", "close");
         sendHeader("Location", viewer.toString());
         endHeaders();
-        socket->close();
+        socket->disconnectFromHost();
         return Unconnected;
     }
 
@@ -282,7 +324,7 @@ WebSocket::WState WebSocket::sendHandshake()
     return FrameStart;
 }
 
-void WebSocket::sendResponse(int code, QString response)
+void WebSocket::sendResponse(int code, const QString& response)
 {
     QString proto = "HTTP/1.1";
 
@@ -291,7 +333,7 @@ void WebSocket::sendResponse(int code, QString response)
     sendHeader("Server", "QtVNC/0.1");
 }
 
-void WebSocket::sendHeader(QString header, QString value)
+void WebSocket::sendHeader(const QString& header, const QString& value)
 {
     QString line = QString("%1: %2\r\n").arg(header).arg(value);
     socket->write(line.toUtf8().data());
@@ -303,27 +345,28 @@ void WebSocket::endHeaders()
     socket->write(line.toUtf8().data());
 }
 
-void WebSocket::sendError(int code, QString message)
+void WebSocket::sendError(int code, const QString& message)
 {
     qDebug() << __PRETTY_FUNCTION__ << code << message;
     sendResponse(code, message);
     sendHeader("Connection", "close");
     endHeaders();
-    socket->close();
+    socket->disconnectFromHost();
 }
 
-void WebSocket::abort(QString message)
+void WebSocket::abort(const QString& message)
 {
     qDebug() << __PRETTY_FUNCTION__ << message;
     socket->abort();
     state = Unconnected;
-    emit disconnected();
 }
 
 void WebSocket::discardClient()
 {
-    qDebug() << "discarding client";
     state = Unconnected;
+    if (timer) {
+        timer->stop();
+    }
     emit disconnected();
 }
 
@@ -364,4 +407,12 @@ bool WebSocket::flush()
 {
     flushOutbuf();
     return socket->flush();
+}
+
+void WebSocket::close()
+{
+    QByteArray f;
+
+    sendClose(f);
+    state = Unconnected;
 }
