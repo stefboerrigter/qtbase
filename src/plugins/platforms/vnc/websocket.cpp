@@ -189,7 +189,7 @@ WebSocket::WState WebSocket::decodeFrame()
     QByteArray framedata;
     if (opcode == OpPing || opcode == OpClose || opcode == OpContinuation ||
         opcode == OpTextFrame || opcode == OpBinaryFrame) {
-        const char *mdata = mdata = mask + 4; /* masked data */
+        const char *mdata = mask + 4; /* masked data */
         for (qint64 i = 0; i < datalen; i++) {
             framedata.append(mdata[i] ^ mask[i % 4]);
         }
