@@ -50,6 +50,11 @@
 #include "qvncscreen.h"
 #include "websocket.h"
 
+extern "C" {
+#include "d3des.h"
+#define CHALLENGESIZE 16
+}
+
 QT_BEGIN_NAMESPACE
 
 class QVNCServer;
@@ -459,7 +464,7 @@ private slots:
 
 private:
     void init();
-    enum ClientState { Unconnected, Protocol, Init, Connected };
+    enum ClientState { Unconnected, Protocol, SecurityResult, Init, Connected };
     QStringList mArgs;
     QTimer *timer;
     QTcpServer *serverSocket;
@@ -493,6 +498,8 @@ private:
     QVNCCursor *cursor;
     QVNCSocket::SocketType mode;
     QUrl ws_viewer;
+    unsigned char challenge[CHALLENGESIZE];
+    QString password;
 };
 
 class QVNCScreenPrivate : public QObject

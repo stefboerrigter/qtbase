@@ -5405,12 +5405,9 @@ ORIG_CFG_XCB="$CFG_XCB"
 ORIG_CFG_EGLFS="$CFG_EGLFS"
 ORIG_CFG_DIRECTFB="$CFG_DIRECTFB"
 ORIG_CFG_LINUXFB="$CFG_LINUXFB"
-<<<<<<< b4ada3f0d8feed7dbff22aa780d38ab126020ac6
 ORIG_CFG_MIRCLIENT="$CFG_MIRCLIENT"
-=======
 ORIG_CFG_VNC="$CFG_VNC"
 ORIG_CFG_KMS="$CFG_KMS"
->>>>>>> Initial commit of VNC support
 
 if [ "$CFG_LIBUDEV" != "no" ]; then
     if [ -n "$PKG_CONFIG" ] && $PKG_CONFIG --exists libudev 2>/dev/null; then
@@ -7392,11 +7389,8 @@ report_support "      EGLFS Mali ........." "$CFG_EGLFS_MALI"
 report_support "      EGLFS Raspberry Pi ." "$CFG_EGLFS_BRCM"
 report_support "      EGLFS X11 .........." "$CFG_EGL_X"
 report_support "    LinuxFB .............." "$CFG_LINUXFB"
-<<<<<<< b4ada3f0d8feed7dbff22aa780d38ab126020ac6
 report_support "    Mir client............" "$CFG_MIRCLIENT"
-=======
 report_support "    VNC .................." "$CFG_VNC"
->>>>>>> Initial commit of VNC support
 report_support "    XCB .................." "$CFG_XCB" system "system library" qt "bundled copy"
 if [ "$CFG_XCB" != "no" ]; then
     report_support "      EGL on X ..........." "$CFG_EGL_X"
