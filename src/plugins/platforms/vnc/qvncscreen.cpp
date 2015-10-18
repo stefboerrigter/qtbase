@@ -75,6 +75,8 @@ void usage()
     qWarning() << "         defaults to" << defaultMaximize();
     qWarning() << "    viewer=<URL> - HTML5 VNC viewer URL";
     qWarning() << "         defaults to" << defaultViewer();
+    qWarning() << "    password=<str> - use password for auth";
+    qWarning() << "         defaults to no password";
 }
 
 bool QVNCScreen::initialize()
