@@ -370,6 +370,7 @@ void QVNCServer::init()
     QRegularExpression displayRx(QLatin1String("display=(\\d+)"));
     QRegularExpression viewerRx(QLatin1String("viewer=(\\S+)"));
     QRegularExpression modeRx(QLatin1String("mode=(\\S+)"));
+    QRegularExpression passwordRx(QLatin1String("password=([a-zA-Z0-9+\\/=]+)"));
 
     foreach (const QString &arg, mArgs) {
         QRegularExpressionMatch match;
@@ -404,6 +405,8 @@ void QVNCServer::init()
             } else {
                 qWarning() << "Invalid mode, using" << "websocket";
             }
+        } else if (arg.contains(passwordRx, &match)) {
+            password = match.captured(1);
         }
     }
 
@@ -414,11 +417,15 @@ void QVNCServer::init()
     connect(timer, SIGNAL(timeout()), this, SLOT(checkUpdate()));
 
     serverSocket = new QTcpServer(this);
-    if (!serverSocket->listen(*addr, port))
+    if (!serverSocket->listen(*addr, port)) {
         qDebug() << "QVNCServer could not connect:" << serverSocket->errorString();
-    else
+    } else {
         qDebug() << "QVNCServer created on" << addr->toString() << "port" << port << "mode" << ((mode == QVNCSocket::Web) ? "websocket" : "raw");
+    }
 
+    if (password.length() == 0) {
+        qWarning("QVNCServer: no password configured!");
+    }
     connect(serverSocket, SIGNAL(newConnection()), this, SLOT(acceptConnection()));
 
     encoder = 0;
@@ -488,10 +495,55 @@ void QVNCServer::readClient()
                 client->read(proto, 12);
                 proto[12] = '\0';
                 qDebug("Client protocol version %s", proto);
-                // No authentication
-                quint32 auth = htonl(1);
+                if (password.length() == 0) {
+                    quint32 auth = htonl(1);
+                    client->write((char *) &auth, sizeof(auth));
+                    state = Init;
+                } else {
+                    // vnc password authentication
+                    quint32 auth = htonl(2);
+                    client->write((char *) &auth, sizeof(auth));
+
+                    QTime time = QTime::currentTime();
+                    qsrand((uint)time.msec());
+                    for (int i = 0; i < CHALLENGESIZE; i++) {
+                        challenge[i] = qrand() & 0xff;
+                    }
+                    client->write((char *) challenge, CHALLENGESIZE);
+                    state = SecurityResult;
+                }
+            }
+            break;
+
+        case SecurityResult:
+            if (client->bytesAvailable() >= CHALLENGESIZE)
+            {
+                unsigned char pkey[8], response[CHALLENGESIZE];
+                const char *pdata = password.toLatin1().data();
+
+                client->read((char *) response, CHALLENGESIZE);
+
+                for (int i = 0; i < 8; i++) {
+                    pkey[i] = (i < password.size()) ? pdata[i] : 0;
+                }
+                vnc_deskey(pkey, EN0);
+
+                for (int i = 0; i < CHALLENGESIZE; i += 8) {
+                    vnc_des(challenge + i, challenge + i);
+                }
+                bool ok = (memcmp(challenge, response, CHALLENGESIZE) == 0);
+
+                qDebug("QVNCServer Authentication %s", ok ? "passed!" : "failed!");
+
+                quint32 auth = htonl(ok ? 0 : 1);
                 client->write((char *) &auth, sizeof(auth));
-                state = Init;
+                if (ok) {
+                    state = Init;
+                } else {
+                    memset(challenge, 0, CHALLENGESIZE);
+                    client->close();
+                    discardClient();
+                }
             }
             break;
 
